@@ -1,0 +1,9 @@
+{
+  "test": {
+    "username": "nodejs_web",
+    "password": "nodejs_pw",
+    "database": "nodejs_schema",
+    "host": "121.170.121.239",
+    "dialect": "mysql"
+  }
+}

@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>그래프</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto|Varela+Round">
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css">
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.0/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/js/bootstrap.min.js"></script>
+    <style>
+        .echarts__demo {
+            border: 1px solid black;
+            margin: 10px;
+            padding: 10px;
+            width: 47%;
+            height: 800px;
+            float: left;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- 첫번째 차트 : Core 번호별 통계량 -->
+    <div id="coreChart" class='echarts__demo'></div>
+    <!-- 두번째 차트 : Task 번호별 통계량 -->
+    <div id="taskChart" class='echarts__demo'></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.2.2/dist/echarts.min.js"></script>
+    <script>
+        var data;
+        
+        let get_idx = window.location.pathname.replace('/chart/', '');
+        const data2 = JSON.stringify({ 'idx': get_idx });
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '../get_data');
+        xhr.setRequestHeader('Content-Type', "application/json");
+        xhr.send(data2);
+
+        xhr.addEventListener('load', function () {
+            const recv_json = JSON.parse(xhr.responseText);
+            data = recv_json['datas'];
+            make_chart();
+            return;
+        });
+
+        function make_chart() {
+            var coreChart = echarts.init(document.getElementById('coreChart'));
+            // Task 번호별 통계량 차트 초기화
+            var taskChart = echarts.init(document.getElementById('taskChart'));
+            // core별 데이터 처리
+            let coreData = {};
+            for (let i = 0; i < data.length; i++) {
+                let coreName = data[i].name;
+                if (!coreData[coreName]) {
+                    coreData[coreName] = {
+                        task1: [],
+                        task2: [],
+                        task3: [],
+                        task4: [],
+                        task5: []
+                    };
+                }
+                coreData[coreName].task1.push(data[i].task1);
+                coreData[coreName].task2.push(data[i].task2);
+                coreData[coreName].task3.push(data[i].task3);
+                coreData[coreName].task4.push(data[i].task4);
+                coreData[coreName].task5.push(data[i].task5);
+            }
+
+            // 각 core별 최소값, 최대값, 평균값, 표준편차 계산
+            let coreStats = {};
+            for (let coreName in coreData) {
+                coreStats[coreName] = {};
+                for (let taskName in coreData[coreName]) {
+                    let taskData = coreData[coreName][taskName];
+                    let taskStats = {};
+                    taskStats.min = Math.min(...taskData);
+                    taskStats.max = Math.max(...taskData);
+                    taskStats.avg = taskData.reduce((acc, val) => acc + val) / taskData.length;
+                    taskStats.stddev = Math.sqrt(taskData.reduce((acc, val) => acc + Math.pow(val - taskStats.avg, 2), 0) / taskData.length);
+                    coreStats[coreName][taskName] = taskStats;
+                }
+            }
+
+            // task별 데이터 처리
+            let taskData = {};
+
+            const task_key_obj = Object.keys(data[0]).filter(d => d.startsWith("task"));
+            for (let taskName of task_key_obj) {
+                if (!taskData[taskName]) {
+                    taskData[taskName] = {
+                        core1: [],
+                        core2: [],
+                        core3: [],
+                        core4: [],
+                        core5: []
+                    };
+                }
+            }
+
+            for (let i = 0; i < data.length; i++) {
+                taskData['task1'][data[i].name].push(data[i].task1);
+                taskData['task2'][data[i].name].push(data[i].task2);
+                taskData['task3'][data[i].name].push(data[i].task3);
+                taskData['task4'][data[i].name].push(data[i].task4);
+                taskData['task5'][data[i].name].push(data[i].task5);
+            }
+            // 각 task별 최소값, 최대값, 평균값, 표준편차 계산
+            let taskStats = {};
+            for (let taskName in taskData) {
+                taskStats[taskName] = {};
+                for (let coreName in taskData[taskName]) {
+                    let coreData = taskData[taskName][coreName];
+                    let coreStats = {};
+                    coreStats.min = Math.min(...coreData);
+                    coreStats.max = Math.max(...coreData);
+                    coreStats.avg = coreData.reduce((acc, val) => acc + val) / coreData.length;
+                    coreStats.stddev = Math.sqrt(coreData.reduce((acc, val) => acc + Math.pow(val - coreStats.avg, 2), 0) / coreData.length);
+                    taskStats[taskName][coreName] = coreStats;
+                }
+            }
+            let coreOption = {
+                title: {
+                    text: 'core별 성능',
+                    subtext: '각 Core별 Task 성능'
+                },
+                tooltip: {
+                    trigger: 'axis',
+                    axisPointer: {
+                        type: 'cross'
+                    },
+                    formatter: function (params) {
+                        let coreName = params[0].axisValue;
+                        let tooltip = `<strong>${coreName} 성능 비교</strong><br>`;
+                        let taskName = params[0].seriesName;
+                        let taskStats = coreStats[coreName][taskName.toLowerCase()];
+                        tooltip += `${taskName}:<br>최대값: ${taskStats.max}<br>평균값: ${taskStats.avg.toFixed(2)}<br>최소값: ${taskStats.min}<br><br>표준편차: ${taskStats.stddev.toFixed(2)}`;
+                        return tooltip;
+                    }
+                },
+                legend: {
+                    selectedMode: 'single',
+                    data: Object.keys(taskData)
+                },
+                grid: {
+                    left: '4%',
+                    right: '10%',
+                    bottom: '3%',
+                    containLabel: true
+                },
+                xAxis: {
+                    type: 'category',
+                    data: Object.keys(coreData)
+                },
+                yAxis: {
+                    type: 'value',
+                    axisPointer: {
+                        snap: true
+                    }
+                },
+                series: []
+            };
+
+            Object.keys(taskData).forEach((t_task_name, t_task_idx) => {
+                coreOption.series.push(
+                    {
+                        name: t_task_name,
+                        type: 'line',
+                        data: Object.keys(coreData).map(coreName => coreStats[coreName][t_task_name].min),
+                        lineStyle: {
+                            normal: {
+                                type: 'dotted'
+                            }
+                        }
+                    },
+                    {
+                        name: t_task_name,
+                        type: 'line',
+                        data: Object.keys(coreData).map(coreName => coreStats[coreName][t_task_name].max),
+                        lineStyle: {
+                            normal: {
+                                type: 'dotted'
+                            }
+                        }
+                    },
+                    {
+                        name: t_task_name,
+                        type: 'line',
+                        data: Object.keys(coreData).map(coreName => coreStats[coreName][t_task_name].avg),
+                        itemStyle: {
+                            normal: {
+                                color: ['#c23531', '#2f4554', '#61a0a8', '#d48265', '#91c7ae'][t_task_idx], // Different colors for different legends
+                            }
+                        },
+                        lineStyle: {
+                            normal: {
+                                type: 'solid'
+                            }
+                        }
+                    });
+            });
+            coreChart.setOption(coreOption);
+            window.addEventListener('resize', function () {
+                coreChart.resize();
+            })
+
+            // task별 그래프 그리기
+            let taskOption = {
+                title: {
+                    text: 'task별 성능',
+                    subtext: '각 Task별 Core 성능'
+                },
+                tooltip: {
+                    trigger: 'axis',
+                    axisPointer: {
+                        type: 'cross'
+                    },
+                    formatter: function (params) {
+                        let taskName = params[0].axisValue;
+                        let tooltip = `<strong>${taskName} 성능 비교</strong><br>`;
+                        let coreName = params[0].seriesName;
+                        let coreStats = taskStats[taskName][coreName.toLowerCase()];
+                        tooltip += `${coreName}:<br>최대값: ${coreStats.max}<br>평균값: ${coreStats.avg.toFixed(2)}<br>최소값: ${coreStats.min}<br><br>표준편차: ${coreStats.stddev.toFixed(2)}`;
+                        return tooltip;
+                    }
+                },
+                legend: {
+                    selectedMode: 'single',
+                    data: Object.keys(coreData)
+                },
+                grid: {
+                    left: '4%',
+                    right: '10%',
+                    bottom: '3%',
+                    containLabel: true
+                },
+                xAxis: {
+                    type: 'category',
+                    data: Object.keys(taskData)
+                },
+                yAxis: {
+                    type: 'value',
+                    axisPointer: {
+                        snap: true
+                    }
+                },
+                series: []
+            };
+
+            //data: Object.keys(taskData).map(taskName => taskStats[taskName]['core1'].avg)
+
+            Object.keys(coreData).forEach((t_core_name, t_core_idx) => {
+                taskOption.series.push({
+                    name: t_core_name,
+                    type: 'line',
+                    data: Object.keys(taskData).map(taskName => taskStats[taskName][t_core_name].min),
+                    lineStyle: {
+                        normal: {
+                            type: 'dotted'
+                        }
+                    }
+                },
+                    {
+                        name: t_core_name,
+                        type: 'line',
+                        data: Object.keys(taskData).map(taskName => taskStats[taskName][t_core_name].max),
+                        lineStyle: {
+                            normal: {
+                                type: 'dotted'
+                            }
+                        }
+                    },
+                    {
+                        name: t_core_name,
+                        type: 'line',
+                        data: Object.keys(taskData).map(taskName => taskStats[taskName][t_core_name].avg),
+                        itemStyle: {
+                            normal: {
+                                color: ['#c23531', '#2f4554', '#61a0a8', '#d48265', '#91c7ae'][t_core_idx], // Different colors for different legends
+                            }
+                        },
+                        lineStyle: {
+                            normal: {
+                                type: 'solid'
+                            }
+                        }
+                    });
+            });
+            taskChart.setOption(taskOption);
+            window.addEventListener('resize', function () {
+                taskChart.resize();
+            })
+        }
+    </script>
+</body>
+
+</html>
